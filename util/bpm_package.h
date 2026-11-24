@@ -45,8 +45,6 @@ bool bpm_semver_valid(const char *s);
 int bpm_verify_cms(const __u8 *payload, size_t payload_len,
 		   const __u8 *sig, size_t sig_len,
 		   const char *cert_path);
-int bpm_verify_cms_fd(const __u8 *payload, size_t payload_len,
-		      const __u8 *sig, size_t sig_len, int cert_fd);
 
 bool bpm_archive_rel_ok(const char *name);
 

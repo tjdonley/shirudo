@@ -144,7 +144,9 @@ What can change when
        that key. A selected config signed by no listed key is refused.
    * - Repository index certificates
      - From the initial config.
-     - Change at activation.
+     - Change at activation. Indexed installs and upgrades from the
+       repository then wait for a ``bpm repo update`` that verifies an
+       index signed by the new key.
      - Kept, as part of the selected config.
    * - AK and EK
      - Fixed by the TPM.

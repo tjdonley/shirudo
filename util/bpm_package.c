@@ -270,18 +270,6 @@ int bpm_verify_cms(const __u8 *payload, size_t payload_len,
 	return ret;
 }
 
-int bpm_verify_cms_fd(const __u8 *payload, size_t payload_len,
-		      const __u8 *sig, size_t sig_len, int cert_fd)
-{
-	struct cert cert = {};
-	int ret = -EINVAL;
-
-	if (!cert_read_fd(cert_fd, &cert))
-		ret = verify_detached(payload, payload_len, sig, sig_len, &cert);
-	cert_free(&cert);
-	return ret;
-}
-
 /*
  * Digits and nothing but blanks or NULs around them: a field read up to
  * its first stray byte, or a base-256 size read as zero, put the next

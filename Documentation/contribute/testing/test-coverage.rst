@@ -744,6 +744,13 @@ signed config image.
        carries a token, with registry credentials set as without; a
        challenge whose scheme only starts with ``Bearer`` or ``Basic``
        gets neither a token nor credentials
+   * - ``t7013-bpm-index-cache``
+     - Indexed install and upgrade after a source endpoint, index
+       repository or certificate changes, migration from a plain index,
+       reuse after a failed refresh or cache write, and upgrade from a
+       second source when the first needs a refresh or its certificate is
+       missing. Uses the image CLI helper and bubblewrap for private
+       package state.
    * - ``t7101-bpm-tree``
      - Tree sync with a selector
    * - ``t7102-bpm-tree-sequential``
@@ -1200,7 +1207,7 @@ Coverage by area
        ``config-update``, ``image``. Unit: ``config_update``
    * - Packages and repositories
      - ``t7001``, ``t7002``, ``t7003``, ``t7004``, ``t7005``,
-       ``t7006``, ``t7114``. Fuzz:
+       ``t7006``, ``t7013``, ``t7114``. Fuzz:
        ``beefile``, ``bpm-index``, ``bpm-info``, ``bpm-package``,
        ``bpm-tar``, ``oci-http``, ``oci-manifest``, ``oci-ref``,
        ``registry-auth``. Unit:
@@ -1404,8 +1411,9 @@ Commands and procedures
 
 - ``bpm repo update``, ``bpm install``, ``bpm upgrade`` and ``bpm
   uninstall`` against a repository on a target. ``t7004`` reads the
-  unit files, ``t7001`` checks argument validation and the
-  ``bpm-index`` fuzz target the index parser.
+  unit files, ``t7001`` checks argument validation, ``t7013`` checks the
+  index cache against a local registry on the host, and the ``bpm-index``
+  fuzz target exercises the index parser.
 - ``bpm config update``.
 - ``upatch load`` or ``upatch unload`` refusing ``tampered`` for a
   stale ``--expect-chain``. Only ``attest verify`` is tested with that

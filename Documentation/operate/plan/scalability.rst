@@ -75,7 +75,8 @@ Timing and failures
 - A failed request is not retried. A failed run waits for the next run of
   its timer, and status 429 and ``Retry-After`` get no special handling.
   One unreachable repository does not stop the update of the others,
-  and ``bpm upgrade`` still runs from the cached indexes.
+  and ``bpm upgrade`` still runs from cached indexes that match their
+  current repository settings and signing certificates.
 - A connection has 30 seconds to open, and a transfer that moves less
   than 1 byte per second for 60 seconds is cut. A request has no overall
   time limit; the service has 30 minutes.

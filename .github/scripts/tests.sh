@@ -67,7 +67,7 @@ setup() {
 
 	# spatch opens libpython3.X.so by that name for the Python of its
 	# rules, and only the -dev package installs it.
-	set -- rpm coccinelle libpython3-dev
+	set -- rpm coccinelle libpython3-dev bubblewrap
 	if [ "${COVERAGE:-0}" = 1 ]; then
 		set -- "$@" lcov
 	fi

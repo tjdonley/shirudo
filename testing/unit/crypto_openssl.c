@@ -28,9 +28,33 @@ static void sha256_buffer_zeroes_a_failed_digest(void)
 	EXPECT_MEMEQ(out, zero, sizeof(out));
 }
 
+static void cert_sha256_hashes_the_der_certificate(void)
+{
+	static const char pem[] =
+		"-----BEGIN CERTIFICATE-----\n"
+		"MIH+MIGxoAMCAQICAQEwBQYDK2VwMA8xDTALBgNVBAMMBHVuaXQwHhcNMjYxMTI0\n"
+		"MTY0NzIwWhcNMjYxMTI1MTY0NzIwWjAPMQ0wCwYDVQQDDAR1bml0MCowBQYDK2Vw\n"
+		"AyEAGstShqT1ZoSGQVxHIuc56aDkf1S/jbNLX+6ZayrmyxGjMjAwMB0GA1UdDgQW\n"
+		"BBRTfNKkZhU8zRJMJZUJqg798VDqPTAPBgNVHRMBAf8EBTADAQH/MAUGAytlcANB\n"
+		"APqxkDRdY5fl+pCP8/V93kipif3xacKpnoxG2xkQflhZVxx3xks2fZnmrp5qBooL\n"
+		"sfYxslu6i6cUD87PNNW0XQs=\n"
+		"-----END CERTIFICATE-----\n";
+	static const char want[] =
+		"cc599a9a8988631cacaf820ca3dda624b7772ae634ac771e15c4e593ccee5945";
+	struct cert cert __cleanup(cert_free) = {};
+	__u8 digest[CRYPTO_SHA256_LEN];
+	char hex[2 * sizeof(digest) + 1];
+
+	ASSERT_EQ(cert_read_memory((const __u8 *)pem, sizeof(pem) - 1, &cert), 0);
+	ASSERT_EQ(cert_sha256(&cert, digest), 0);
+	hex_encode(digest, sizeof(digest), hex);
+	EXPECT_STREQ(hex, want);
+}
+
 static const struct unit_case cases[] = {
 	UNIT_CASE(sha256_matches_fips_180_vector),
 	UNIT_CASE(sha256_buffer_zeroes_a_failed_digest),
+	UNIT_CASE(cert_sha256_hashes_the_der_certificate),
 	{}
 };
 

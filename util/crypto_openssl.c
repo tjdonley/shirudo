@@ -251,6 +251,18 @@ void cert_free(struct cert *cert)
 	cert->impl = NULL;
 }
 
+int cert_sha256(const struct cert *cert, __u8 out[CRYPTO_SHA256_LEN])
+{
+	__u32 len = 0;
+
+	if (!cert || !cert->impl || !out)
+		return -EINVAL;
+	if (X509_digest(cert->impl, EVP_sha256(), out, &len) != 1 ||
+	    len != CRYPTO_SHA256_LEN)
+		return -EINVAL;
+	return 0;
+}
+
 /*
  * SHA-256 over the DER SubjectPublicKeyInfo, the bytes Go's
  * x509.MarshalPKIXPublicKey writes; X509_pubkey_digest() hashes only the

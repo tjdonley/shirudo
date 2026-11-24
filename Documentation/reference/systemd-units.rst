@@ -294,7 +294,9 @@ shirudo-bpm-repo-update.service
 ``registries.d``. ``bpm upgrade`` then installs, for every package
 installed from a repository, the highest version in its cached index
 when that version is newer than the installed one. A package pulled
-directly is left alone. See
+directly is left alone. If an installed package's repository certificate
+cannot be read or its cached index needs a refresh, ``bpm upgrade`` skips
+that repository's packages, continues with the others and exits 1. See
 :doc:`/operate/run/deliver-packages`.
 
 shirudo-bpm-tree-sync.service
