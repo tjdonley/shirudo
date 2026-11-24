@@ -171,8 +171,12 @@ repo update
 
 ``repo update`` fetches each source's configured signed index, or the index
 for ``<source>`` alone, verifies it with the source's key file and caches it in
-``/var/lib/shirudo/bpm/repos/<source>/index.json``. A source that fails
-does not stop the others, and the exit status is then 1.
+``/var/lib/shirudo/bpm/repos/<source>/index.cache``. A source that fails
+does not stop the others, and the exit status is then 1. The last verified
+index remains usable while the source name, endpoint, index repository
+and signing certificate match. After any of these changes, or on a host
+with an older ``index.json`` cache, run ``shirudo bpm repo update <source>``
+once before using that source for an indexed install or upgrade.
 
 tree sync
 ---------
@@ -548,6 +552,10 @@ For each package ``install`` and ``upgrade``:
 it installs the greatest version in the cached index when that version is
 greater than the installed one: it unloads the old version with its
 directives, loads the new one and restores the old one when that fails.
+When a registered source needs a refreshed cache, ``upgrade`` names the
+refresh command. If its signing certificate cannot be read, ``upgrade``
+names the affected source. In either case it continues with the other
+packages and exits 1.
 ``upgrade`` fetches no index itself. ``shirudo-bpm-repo-update.timer`` runs
 ``repo update`` and then ``upgrade`` at boot and 60 seconds after each
 run, so a new version in a registered index reaches every target that

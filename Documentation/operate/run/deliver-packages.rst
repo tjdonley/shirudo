@@ -26,7 +26,7 @@ the upatch tree:
 #. On the target, ``shirudo bpm repo update`` fetches that index from
    each repository, verifies its signature against the repository's
    certificate and caches it under
-   ``/var/lib/shirudo/bpm/repos/<name>/index.json``.
+   ``/var/lib/shirudo/bpm/repos/<name>/index.cache``.
 #. ``shirudo bpm upgrade`` installs, for every package installed from a
    repository, the highest version in the cached index that is newer
    than the installed one.
@@ -174,7 +174,11 @@ Add a repository
    The command prints nothing when it succeeds. When it fails, it prints
    ``bpm repo update: <reason>`` and exits 1. Without ``<name>`` it
    updates every repository, continues past one that fails and exits 1
-   at the end.
+   at the end. If a refresh fails, the target can use its last verified
+   index for the same source, endpoint, index repository and certificate.
+   Refresh successfully after changing any of them, including replacing
+   the certificate at the same path. A target upgraded from a version
+   that cached only ``index.json`` also needs one successful refresh.
 
 .. _deliver-packages-config-update:
 

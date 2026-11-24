@@ -54,6 +54,8 @@ struct cert {
 int cert_read_file(const char *path, struct cert *cert) __must_check;
 int cert_read_fd(int fd, struct cert *cert) __must_check;
 void cert_free(struct cert *cert);
+/* SHA-256 of the whole DER certificate; cert_pubkey_digest() of its SPKI. */
+int cert_sha256(const struct cert *cert, __u8 out[CRYPTO_SHA256_LEN]) __must_check;
 int cert_pubkey_digest(const struct cert *cert,
 		       __u8 out[CRYPTO_SHA256_LEN]) __must_check;
 /* The provider's name for the cert's public key, e.g. "ML-DSA-87". */

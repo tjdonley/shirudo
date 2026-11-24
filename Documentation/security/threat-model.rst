@@ -1217,7 +1217,10 @@ T7 Delivery path
 Targets pull packages and trees from OCI registries that shirudo does
 not trust. ``shirudo bpm repo update`` fetches a repository's index and
 its detached CMS signature and verifies them against the repository
-certificate in the signed config image. A package installed from a
+certificate in the signed config image. The sealed cache binds the index
+to the source name, endpoint, index repository and SHA-256 of that
+certificate. Indexed installs and upgrades check the binding against the
+active source before selecting a package. A package installed from a
 repository must match the digests in that index, and the loader in it
 is a signed upatch the kernel verifies at load (T1).
 
@@ -1265,7 +1268,7 @@ and tree signatures accept algorithms other than ML-DSA (U4).
    kernel verifies each loader (T1)
 :Refusal: the ``bpm`` command fails and installs nothing
 :Counters: none
-:Tests: ``t7005``, ``t7101``, ``t7102``, ``t7103``, ``t7104``,
+:Tests: ``t7005``, ``t7013``, ``t7101``, ``t7102``, ``t7103``, ``t7104``,
    ``t7105``, ``t7106``, ``t7107``, ``t7108``, ``t7111``, ``t8005``
 :Proofs: ``bpm-tar-header``, ``bpm-tar-octal``, ``bpm-archive-path``,
    ``bpm-oci-challenge``, ``bpm-oci-token``, ``bpm-oci-header``,

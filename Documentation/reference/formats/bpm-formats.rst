@@ -319,8 +319,13 @@ The index document:
 
 A published version is immutable: ``bpm push`` refuses to list a name and
 version again with a different ``manifest_digest`` or ``package_digest``.
-The target keeps the verified document as
-``/var/lib/shirudo/bpm/repos/<source>/index.json``.
+The target stores the verified document in
+``/var/lib/shirudo/bpm/repos/<source>/index.cache``. Four newline-terminated
+lines precede the original document bytes. They hold the source name,
+configured endpoint, effective index repository and 64 lowercase hex
+digits of the SHA-256 of the signing certificate's DER. A refresh replaces
+the whole file in one rename. Indexed installs and upgrades compare all
+four fields with the current source before reading the document.
 
 Limits
 ------

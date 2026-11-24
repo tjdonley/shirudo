@@ -142,10 +142,11 @@ the label as foreign. In the initrd, ``init`` binds
      - ``bpm install``, ``uninstall``, ``upgrade``
      - ``0600``
      - Installed packages.
-   * - ``bpm/repos/<source>/index.json``
+   * - ``bpm/repos/<source>/index.cache``
      - ``bpm repo update``
      - ``0600``
-     - Cached, verified package index of a repository.
+     - Verified package index with its source name, endpoint, index
+       repository and the SHA-256 of its signing certificate.
    * - ``bpm/staging/<name>-<version>.bee``
      - ``bpm install``, ``upgrade``
      - ``0600``

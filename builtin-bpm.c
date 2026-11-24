@@ -422,18 +422,16 @@ static int load_source(const char *name, struct bpm_source *s)
 	return 0;
 }
 
-static int verify_with_source_key(const struct bpm_source *s,
-				  const __u8 *data, size_t len,
-				  const __u8 *sig, size_t sig_len)
+static int source_cert(const struct bpm_source *s, struct cert *cert)
 {
 	int fd, ret;
 
 	if (!image_config_active())
-		return bpm_verify_cms(data, len, sig, sig_len, s->key_file);
+		return cert_read_file(s->key_file, cert);
 	fd = image_open_relative(s->key_file, O_RDONLY);
 	if (fd < 0)
 		return fd;
-	ret = bpm_verify_cms_fd(data, len, sig, sig_len, fd);
+	ret = cert_read_fd(fd, cert);
 	close(fd);
 	return ret;
 }
@@ -467,15 +465,6 @@ static int bpm_fail(const char *action, int ret)
 	else
 		pr_err("bpm %s failed", action);
 	return 1;
-}
-
-static int cache_path(const char *source, char *out, size_t sz)
-{
-	if (!bpm_name_ok(source))
-		return -EINVAL;
-	if (strsprintf(out, sz, "%s/%s/index.json", BPM_REPOS_DIR, source) < 0)
-		return -ENAMETOOLONG;
-	return 0;
 }
 
 /* The digest of fd's bytes from its start, whatever its offset. */
@@ -959,35 +948,128 @@ static int list_keys(bool json)
 	return ret;
 }
 
-static int load_cached_index(const char *source, struct bpm_index_entry *entries, int *n)
-{
+struct index_cache {
 	char path[PATH_MAX];
+	/* Name, endpoint, index repository and certificate digest, a line each. */
+	char header[BPM_MAX_NAME + 2 * BPM_MAX_ENDPOINT + 2 * CRYPTO_SHA256_LEN + 2];
+	size_t header_len;
+};
+
+static int index_cache_init(const struct bpm_source *source, const struct cert *cert,
+			    struct index_cache *cache)
+{
+	__u8 digest[CRYPTO_SHA256_LEN];
+	char hex[2 * sizeof(digest) + 1];
+	int ret;
+
+	ret = cert_sha256(cert, digest);
+	if (ret)
+		return ret;
+	hex_encode(digest, sizeof(digest), hex);
+	/* No field holds a newline, so the lines keep them apart. */
+	ret = strsprintf(cache->header, sizeof(cache->header), "%s\n%s\n%s\n%s\n",
+			 source->name, source->endpoint, source->index_repository, hex);
+	if (ret < 0)
+		return ret;
+	cache->header_len = ret;
+	if (strsprintf(cache->path, sizeof(cache->path), "%s/%s/index.cache",
+		       BPM_REPOS_DIR, source->name) < 0)
+		return -ENAMETOOLONG;
+	return 0;
+}
+
+static int index_stale(const struct bpm_source *source)
+{
+	pr_err("bpm: refresh the index with 'shirudo bpm repo update %s'", source->name);
+	return 1;
+}
+
+/*
+ * Return 0 with the cached entries, 1 after reporting a source whose
+ * certificate or verified index is unavailable, or a negative errno.
+ */
+static int load_cached_index(const struct bpm_source *source,
+			     struct bpm_index_entry *entries, int *n)
+{
+	struct cert cert __cleanup(cert_free) = {};
+	struct index_cache cache;
 	__u8 *body;
 	size_t len;
 	int ret;
 
-	ret = cache_path(source, path, sizeof(path));
+	ret = source_cert(source, &cert);
+	if (ret) {
+		pr_err("bpm: cannot read signing certificate for %s: %s",
+		       source->name, strerror(-ret));
+		return 1;
+	}
+	ret = index_cache_init(source, &cert, &cache);
 	if (ret)
 		return ret;
-	ret = read_file(path, 64u * 1024u * 1024u, &body, &len);
+	ret = read_file(cache.path, cache.header_len + BPM_MAX_HTTP_BODY, &body, &len);
+	if (ret == -ENOENT)
+		return index_stale(source);
 	if (ret)
 		return ret;
-	ret = bpm_index_parse(body, len, entries, n);
+	if (len >= cache.header_len && !memcmp(body, cache.header, cache.header_len))
+		ret = bpm_index_parse(body + cache.header_len, len - cache.header_len,
+				      entries, n);
+	else
+		ret = index_stale(source);
 	xfree(body, len + 1);
+	return ret;
+}
+
+static int cache_verified_index(const struct bpm_source *source, const struct cert *cert,
+				const struct bpm_buffer *index)
+{
+	struct bpm_index_entry *entries;
+	struct index_cache cache;
+	char dir[PATH_MAX];
+	size_t len;
+	__u8 *body;
+	int n, ret;
+
+	entries = xcalloc(BPM_MAX_ENTRIES, sizeof(*entries));
+	if (!entries)
+		return -ENOMEM;
+	ret = bpm_index_parse(index->data, index->len, entries, &n);
+	xfree(entries, BPM_MAX_ENTRIES * sizeof(*entries));
+	if (ret)
+		return ret;
+	ret = index_cache_init(source, cert, &cache);
+	if (ret)
+		return ret;
+	if (strsprintf(dir, sizeof(dir), "%s/%s", BPM_REPOS_DIR, source->name) < 0)
+		return -ENAMETOOLONG;
+	ret = seal_mkdir_p(dir, 0700);
+	if (ret)
+		return ret;
+	len = cache.header_len + index->len;
+	body = xmalloc(len);
+	if (!body)
+		return -ENOMEM;
+	memcpy(body, cache.header, cache.header_len);
+	memcpy(body + cache.header_len, index->data, index->len);
+	ret = seal_write_file(cache.path, body, len, 0600);
+	xfree(body, len);
 	return ret;
 }
 
 static int repo_update_one(const char *name)
 {
-	struct bpm_source s;
 	struct bpm_oci_client c __cleanup(bpm_oci_client_clear) = {};
-	struct bpm_descriptor layers[8];
-	int nl = 0;
+	struct cert cert __cleanup(cert_free) = {};
 	struct bpm_buffer manifest = {}, index = {}, sig = {};
-	char url[PATH_MAX], cache[PATH_MAX], dir[PATH_MAX];
-	int ret = 0;
+	struct bpm_descriptor layers[8];
+	struct bpm_source s;
+	char url[PATH_MAX];
+	int nl, ret;
 
 	ret = load_source(name, &s);
+	if (ret)
+		return ret;
+	ret = source_cert(&s, &cert);
 	if (ret)
 		return ret;
 	ret = bpm_oci_parse_endpoint(s.endpoint, &c);
@@ -997,89 +1079,17 @@ static int repo_update_one(const char *name)
 			  url, sizeof(url));
 	if (ret)
 		return ret;
-	ret = bpm_oci_get_memory(&c, url, "application/vnd.oci.image.manifest.v1+json", &manifest);
-	if (ret)
-		goto out;
-	ret = bpm_oci_parse_manifest(manifest.data, manifest.len, layers,
-				     ARRAY_SIZE(layers), &nl, NULL, 0);
-	if (ret)
-		goto out;
-	if (nl < 2) {
-		ret = -EINVAL;
-		goto out;
-	}
-	for (int i = 0; i < nl; i++) {
-		if (!strcmp(layers[i].media, BPM_INDEX_MEDIA)) {
-			char layer_hex[65];
-
-			ret = bpm_oci_url(&c, s.index_repository, "blobs",
-					  layers[i].digest, url, sizeof(url));
-			if (ret)
-				goto out;
-			ret = bpm_oci_get_blob(&c, url, BPM_INDEX_MEDIA, &index);
-			if (!ret)
-				ret = bpm_sha256_hex(index.data, index.len, layer_hex,
-						     sizeof(layer_hex));
-			if (!ret && !bpm_digest_matches(layers[i].digest, layer_hex))
-				ret = -EKEYREJECTED;
-			break;
-		}
-	}
-	if (ret)
-		goto out;
-	for (int i = 0; i < nl; i++) {
-		if (!strcmp(layers[i].media, BPM_INDEX_SIG_MEDIA)) {
-			char sig_hex[65];
-
-			ret = bpm_oci_url(&c, s.index_repository, "blobs",
-					  layers[i].digest, url, sizeof(url));
-			if (ret)
-				goto out;
-			ret = bpm_oci_get_blob(&c, url, BPM_INDEX_SIG_MEDIA, &sig);
-			if (!ret)
-				ret = bpm_sha256_hex(sig.data, sig.len, sig_hex,
-						     sizeof(sig_hex));
-			if (!ret && !bpm_digest_matches(layers[i].digest, sig_hex))
-				ret = -EKEYREJECTED;
-			break;
-		}
-	}
-	if (!ret && !sig.data)
-		ret = -EINVAL;
-	if (ret)
-		goto out;
-	if (verify_with_source_key(&s, index.data, index.len, sig.data,
-				   sig.len)) {
+	ret = bpm_oci_get_memory(&c, url, BPM_MANIFEST_MEDIA, &manifest);
+	if (!ret)
+		ret = bpm_oci_parse_manifest(manifest.data, manifest.len, layers,
+					     ARRAY_SIZE(layers), &nl, NULL, 0);
+	if (!ret)
+		ret = bpm_oci_get_signed(&c, s.index_repository, layers, nl,
+					 BPM_INDEX_MEDIA, BPM_INDEX_SIG_MEDIA, &index, &sig);
+	if (!ret && verify_detached(index.data, index.len, sig.data, sig.len, &cert))
 		ret = -EKEYREJECTED;
-		goto out;
-	}
-	{
-		struct bpm_index_entry *checked;
-		int checked_n = 0;
-
-		checked = xcalloc(BPM_MAX_ENTRIES, sizeof(*checked));
-		if (!checked) {
-			ret = -ENOMEM;
-			goto out;
-		}
-		ret = bpm_index_parse(index.data, index.len, checked,
-				      &checked_n) ? -EINVAL : 0;
-		xfree(checked, BPM_MAX_ENTRIES * sizeof(*checked));
-		if (ret)
-			goto out;
-	}
-	if (strsprintf(dir, sizeof(dir), "%s/%s", BPM_REPOS_DIR, name) < 0) {
-		ret = -ENAMETOOLONG;
-		goto out;
-	}
-	ret = seal_mkdir_p(dir, 0700);
-	if (ret)
-		goto out;
-	ret = cache_path(name, cache, sizeof(cache));
-	if (ret)
-		goto out;
-	ret = seal_write_file(cache, index.data, index.len, 0600);
-out:
+	if (!ret)
+		ret = cache_verified_index(&s, &cert, &index);
 	bpm_buffer_free(&manifest);
 	bpm_buffer_free(&index);
 	bpm_buffer_free(&sig);
@@ -3024,7 +3034,7 @@ static int bpm_install(const char *ref, struct bpm_tables *t)
 	if (!direct) {
 		ret = load_source(source, &source_cfg);
 		if (!ret)
-			ret = load_cached_index(source, entries, &n_entries);
+			ret = load_cached_index(&source_cfg, entries, &n_entries);
 		if (!ret)
 			ret = find_entry(entries, n_entries, name,
 					 version[0] ? version : NULL, &selected);
@@ -3065,6 +3075,7 @@ static int bpm_upgrade(const char *unused, struct bpm_tables *t)
 {
 	struct bpm_state_entry *state = t->state;
 	int n_state, lock, ret, wrc, i;
+	bool source_failed = false;
 
 	if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK)
 		return bpm_fail("initialize curl", -EIO);
@@ -3084,7 +3095,12 @@ static int bpm_upgrade(const char *unused, struct bpm_tables *t)
 			continue;
 		ret = load_source(state[i].source, &source_cfg);
 		if (!ret)
-			ret = load_cached_index(state[i].source, entries, &n_entries);
+			ret = load_cached_index(&source_cfg, entries, &n_entries);
+		if (ret > 0) {
+			source_failed = true;
+			ret = 0;
+			continue;
+		}
 		if (!ret)
 			ret = find_entry(entries, n_entries, state[i].name, NULL,
 					 &selected);
@@ -3114,7 +3130,9 @@ static int bpm_upgrade(const char *unused, struct bpm_tables *t)
 	wrc = bpm_state_write(state, n_state);
 	if (ret)
 		return bpm_finish(lock, ret, "upgrade");
-	return bpm_finish(lock, wrc, "write state");
+	if (wrc)
+		return bpm_finish(lock, wrc, "write state");
+	return bpm_finish(lock, source_failed, "upgrade");
 }
 
 enum bpm_info_opt {
